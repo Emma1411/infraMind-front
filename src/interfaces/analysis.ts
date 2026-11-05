@@ -47,3 +47,16 @@ export interface AnswersResponse {
   domain_status: DomainStatusMap;
   is_complete: boolean;
 }
+
+export type QuestionStatus = "known" | "missing" | "unknown";
+
+/** Une question avec ce que l'on sait déjà : valeur détectée dans le texte, ou réponse donnée. */
+export interface QuestionState extends Question {
+  status: QuestionStatus;
+  value: AnswerValue | null;
+}
+
+export interface QuestionStatesResponse {
+  questions: QuestionState[];
+  domain_status: DomainStatusMap;
+}

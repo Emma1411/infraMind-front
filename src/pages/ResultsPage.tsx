@@ -114,7 +114,7 @@ export default function ResultsPage() {
           className="mt-6 focus:outline-none"
         >
           {tab === "ranking" && <RankingTab evaluation={evaluation} selected={selected} onSelect={select} onDeploy={deploy} />}
-          {tab === "graph" && <GraphTab evaluation={evaluation} selected={selected} onSelect={select} />}
+          {tab === "graph" && <GraphTab evaluation={evaluation} selected={selected} onSelect={select} onDeploy={deploy} />}
           {tab === "costs" && <CostsTab evaluation={evaluation} />}
           {tab === "sensitivity" && <SensitivityTab evaluation={evaluation} onEdit={() => navigate("/completer")} />}
           {tab === "compare" && <CompareTab evaluation={evaluation} />}

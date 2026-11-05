@@ -1,102 +1,202 @@
-import { useId } from "react";
-import type { ArchitectureResult, EvaluationResult } from "../../interfaces/evaluation";
+import { GitCompareArrows, Network } from "lucide-react";
+import { useCallback, useId, useMemo, useState } from "react";
+import Badge from "../../components/Badge";
+import Button from "../../components/Button";
+import type { ArchitectureResult, EvaluationResult, NodeKind } from "../../interfaces/evaluation";
+import { defaultNodeId, diffNodes, graphTotal } from "../../utils/graphModel";
 import { formatMoney } from "../../utils/results";
+import ArchitectureFlow from "./graph/ArchitectureFlow";
+import GraphLegend from "./graph/GraphLegend";
+import GraphTextAlternative from "./graph/GraphTextAlternative";
+import NodeInspector from "./graph/NodeInspector";
 
 interface GraphTabProps {
   evaluation: EvaluationResult;
   selected: ArchitectureResult;
   onSelect: (id: string) => void;
+  onDeploy: (id: string) => void;
 }
 
-const KIND_LABEL: Record<string, string> = {
-  user: "Utilisateurs",
-  compute: "Calcul",
-  database: "Base de données",
-  storage: "Stockage",
-  network: "Réseau",
-  backup: "Sauvegardes",
-  other: "Autres",
-};
+const HINT = "Fais glisser pour déplacer. Zoom : boutons + et −, pincement, ou Ctrl (Cmd) + molette.";
 
-/** Version textuelle de l'architecture : composants et connexions. Sert aussi d'alternative accessible au schéma visuel. */
-export default function GraphTab({ evaluation, selected, onSelect }: GraphTabProps) {
+function kindsOf(...archs: ArchitectureResult[]): NodeKind[] {
+  const order: NodeKind[] = ["user", "network", "compute", "database", "storage", "backup", "other"];
+  const present = new Set(archs.flatMap((arch) => arch.graph?.nodes.map((node) => node.kind) ?? []));
+  return order.filter((kind) => present.has(kind));
+}
+
+export default function GraphTab({ evaluation, selected, onSelect, onDeploy }: GraphTabProps) {
   const selectId = useId();
+  const otherSelectId = useId();
+  const ranking = evaluation.ranking;
+
+  const [compare, setCompare] = useState(false);
+  const [otherId, setOtherId] = useState<string | null>(null);
+  const [pick, setPick] = useState<{ archId: string; nodeId: string } | null>(null);
+
   const graph = selected.graph;
-  const labels = new Map((graph?.nodes ?? []).map((node) => [node.id, node.label]));
-  const total = (graph?.nodes ?? []).reduce((sum, node) => sum + node.monthly_cost, 0);
+  const other = ranking.find((arch) => arch.id === otherId && arch.id !== selected.id) ?? ranking.find((arch) => arch.id !== selected.id) ?? null;
+
+  const pickedNodeId =
+    pick && pick.archId === selected.id && graph?.nodes.some((node) => node.id === pick.nodeId) ? pick.nodeId : null;
+  const activeNodeId = pickedNodeId ?? (graph ? defaultNodeId(graph) : null);
+  const activeNode = graph?.nodes.find((node) => node.id === activeNodeId) ?? null;
+
+  const selectNode = useCallback((nodeId: string) => setPick({ archId: selected.id, nodeId }), [selected.id]);
+
+  const diff = useMemo(
+    () => (compare && graph && other?.graph ? diffNodes(graph, other.graph) : null),
+    [compare, graph, other],
+  );
+
+  const archOption = (arch: ArchitectureResult, index: number) => (
+    <option key={arch.id} value={arch.id}>
+      {index + 1}. {arch.label}
+      {arch.verdict === "recommended" ? " (recommandée)" : ""}
+    </option>
+  );
+
+  const selectClass =
+    "mt-1 block w-full rounded-xl border border-brand-100 bg-white px-4 py-2.5 text-sm text-ink focus:border-brand-400 focus:ring-2 focus:ring-brand-200 focus:outline-none";
 
   return (
     <div>
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <h2 className="text-xl font-semibold text-ink">Composants et connexions</h2>
-          <p className="mt-1 text-sm text-body">
-            Chaque composant avec son coût mensuel. La somme des composants est égale au coût estimé.
+          <h2 className="text-xl font-semibold text-ink">Schéma interactif</h2>
+          <p className="mt-1 max-w-2xl text-sm text-body">
+            Clique sur un composant pour voir ce qu'il fait et ce qu'il coûte. La somme des composants est égale au coût
+            estimé.
           </p>
         </div>
-        <div>
-          <label htmlFor={selectId} className="text-sm font-medium text-ink">
-            Architecture affichée
-          </label>
-          <select
-            id={selectId}
-            value={selected.id}
-            onChange={(event) => onSelect(event.target.value)}
-            className="mt-1 block rounded-xl border border-brand-100 bg-white px-4 py-2.5 text-sm text-ink focus:border-brand-400 focus:ring-2 focus:ring-brand-200 focus:outline-none"
-          >
-            {evaluation.ranking.map((arch, index) => (
-              <option key={arch.id} value={arch.id}>
-                {index + 1}. {arch.label}
-                {arch.verdict === "recommended" ? " (recommandée)" : ""}
-              </option>
-            ))}
-          </select>
-        </div>
+        <Button
+          variant={compare ? "primary" : "secondary"}
+          aria-pressed={compare}
+          iconBefore={<GitCompareArrows className="size-4" aria-hidden />}
+          onClick={() => setCompare((value) => !value)}
+        >
+          {compare ? "Quitter la comparaison" : "Comparer deux schémas"}
+        </Button>
       </div>
 
-      {!graph ? (
-        <p className="mt-6 text-sm text-muted">Aucun schéma disponible pour cette architecture.</p>
-      ) : (
-        <div className="mt-6 grid gap-6 lg:grid-cols-2">
-          <section aria-labelledby="graph-nodes">
-            <h3 id="graph-nodes" className="text-sm font-semibold tracking-wide text-brand-700 uppercase">
-              Composants
-            </h3>
-            <ul className="mt-3 space-y-3">
-              {graph.nodes.map((node) => (
-                <li key={node.id} className="rounded-xl border border-line bg-white p-4">
-                  <div className="flex items-baseline justify-between gap-3">
-                    <p className="font-semibold text-ink">
-                      {node.label} <span className="text-xs font-normal text-muted">· {KIND_LABEL[node.kind] ?? node.kind}</span>
-                    </p>
-                    {node.kind !== "user" && (
-                      <p className="font-mono text-sm text-brand-800">{formatMoney(node.monthly_cost, "USD", 2)} / mois</p>
-                    )}
-                  </div>
-                  {node.description && <p className="mt-1 text-sm text-body">{node.description}</p>}
-                </li>
-              ))}
-            </ul>
-            <p className="mt-3 text-right text-sm font-semibold text-ink">
-              Total : {formatMoney(total, "USD", 2)} / mois
-            </p>
-          </section>
-
-          <section aria-labelledby="graph-links">
-            <h3 id="graph-links" className="text-sm font-semibold tracking-wide text-brand-700 uppercase">
-              Connexions
-            </h3>
-            <ul className="mt-3 space-y-2">
-              {graph.edges.map((edge) => (
-                <li key={edge.id} className="rounded-xl bg-brand-50 px-4 py-2.5 text-sm text-ink">
-                  {labels.get(edge.source) ?? edge.source} <span aria-hidden>→</span>
-                  <span className="sr-only"> vers </span> {labels.get(edge.target) ?? edge.target}
-                  {edge.label && <span className="ml-2 font-mono text-xs text-muted">({edge.label})</span>}
-                </li>
-              ))}
-            </ul>
-          </section>
+      <div className={`mt-4 grid gap-4 ${compare ? "sm:grid-cols-2" : "sm:max-w-md"}`}>
+        <div>
+          <label htmlFor={selectId} className="text-sm font-medium text-ink">
+            {compare ? "Architecture A" : "Architecture affichée"}
+          </label>
+          <select id={selectId} value={selected.id} onChange={(event) => onSelect(event.target.value)} className={selectClass}>
+            {ranking.map(archOption)}
+          </select>
         </div>
+        {compare && (
+          <div>
+            <label htmlFor={otherSelectId} className="text-sm font-medium text-ink">
+              Architecture B
+            </label>
+            <select
+              id={otherSelectId}
+              value={other?.id ?? ""}
+              onChange={(event) => setOtherId(event.target.value)}
+              className={selectClass}
+            >
+              {ranking.filter((arch) => arch.id !== selected.id).map((arch) => archOption(arch, ranking.indexOf(arch)))}
+            </select>
+          </div>
+        )}
+      </div>
+
+      {!compare && (
+        <>
+          {!graph ? (
+            <p className="mt-6 text-sm text-muted">Aucun schéma disponible pour cette architecture.</p>
+          ) : (
+            <div className="mt-6 grid gap-6 lg:grid-cols-[minmax(0,1fr)_21rem]">
+              <section aria-label={`Schéma de ${selected.label}`} className="min-w-0 rounded-xl2 border border-line bg-white p-4 shadow-card">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                  <Badge icon={<Network className="size-3.5" aria-hidden />}>Topologie · palier retenu</Badge>
+                  <p className="text-sm text-body">
+                    Total des composants :{" "}
+                    <span className="font-mono font-semibold text-ink">{formatMoney(graphTotal(graph), "USD", 2)} / mois</span>
+                  </p>
+                </div>
+                <ArchitectureFlow
+                  graph={graph}
+                  graphKey={selected.id}
+                  label={selected.label}
+                  selectedId={activeNodeId}
+                  onSelectNode={selectNode}
+                />
+                <p className="mt-2 text-xs text-muted">{HINT}</p>
+                <GraphLegend kinds={kindsOf(selected)} />
+              </section>
+
+              <NodeInspector
+                node={activeNode}
+                archLabel={selected.label}
+                canDeploy={selected.verdict !== "eliminated"}
+                onDeploy={() => onDeploy(selected.id)}
+              />
+            </div>
+          )}
+
+          <details className="group mt-6 rounded-xl2 border border-line bg-white p-4 shadow-card">
+            <summary className="cursor-pointer text-sm font-medium text-brand-800">Version textuelle du schéma</summary>
+            <div className="mt-4">
+              <GraphTextAlternative arch={selected} />
+            </div>
+          </details>
+        </>
+      )}
+
+      {compare && other && (
+        <>
+          <div className="mt-6 grid gap-6 lg:grid-cols-2">
+            {[
+              { arch: selected, highlighted: diff?.a },
+              { arch: other, highlighted: diff?.b },
+            ].map(({ arch, highlighted }) => (
+              <section
+                key={arch.id}
+                aria-label={`Schéma de ${arch.label}`}
+                className="min-w-0 rounded-xl2 border border-line bg-white p-4 shadow-card"
+              >
+                <h3 className="font-semibold text-ink">{arch.label}</h3>
+                <p className="mb-3 text-sm text-body">
+                  Total :{" "}
+                  <span className="font-mono font-semibold text-ink">
+                    {arch.graph ? formatMoney(graphTotal(arch.graph), "USD", 2) : "—"} / mois
+                  </span>
+                </p>
+                {arch.graph ? (
+                  <ArchitectureFlow graph={arch.graph} graphKey={`compare-${arch.id}`} label={arch.label} highlighted={highlighted} />
+                ) : (
+                  <p className="text-sm text-muted">Aucun schéma disponible.</p>
+                )}
+                {highlighted && highlighted.size > 0 && arch.graph && (
+                  <p className="mt-2 text-sm text-body">
+                    Propre à cette architecture :{" "}
+                    <span className="font-medium text-ink">
+                      {arch.graph.nodes
+                        .filter((node) => highlighted.has(node.id))
+                        .map((node) => node.label)
+                        .join(", ")}
+                    </span>
+                  </p>
+                )}
+              </section>
+            ))}
+          </div>
+          <p className="mt-2 text-xs text-muted">{HINT}</p>
+          <GraphLegend kinds={kindsOf(selected, other)} showDifference />
+
+          <details className="group mt-6 rounded-xl2 border border-line bg-white p-4 shadow-card">
+            <summary className="cursor-pointer text-sm font-medium text-brand-800">Version textuelle des deux schémas</summary>
+            <div className="mt-4 space-y-8">
+              <GraphTextAlternative arch={selected} />
+              <GraphTextAlternative arch={other} />
+            </div>
+          </details>
+        </>
       )}
     </div>
   );

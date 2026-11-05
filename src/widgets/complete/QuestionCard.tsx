@@ -1,16 +1,18 @@
 import { Check } from "lucide-react";
 import { domainLabel } from "../../data/domains";
-import { UNKNOWN_ANSWER, type AnswerValue, type Question } from "../../interfaces/analysis";
+import { UNKNOWN_ANSWER, type AnswerValue, type QuestionState } from "../../interfaces/analysis";
 import type { Currency } from "../../interfaces/spec";
-import { isUnknown } from "../../utils/questions";
-import { CardShell, NumberField } from "./QuestionParts";
+import { isUnknown, type Origin } from "../../utils/questions";
+import { CardShell, NumberField, OriginBadge, OriginNote } from "./QuestionParts";
 
 interface QuestionCardProps {
-  question: Question;
+  question: QuestionState;
   /** « 01 », « 02 »… ou « DÉTAIL ». */
   tag: string;
   anchorId?: string;
+  /** Valeur affichée : la réponse de l'utilisateur, sinon la valeur détectée dans son texte. */
   value: AnswerValue | undefined;
+  origin: Origin;
   currency: Currency | null;
   onChange: (path: string, value: AnswerValue) => void;
   onClear: (path: string) => void;
@@ -21,7 +23,16 @@ const CHOICE =
   "hover:border-brand-300 has-[:checked]:border-brand-500 has-[:checked]:bg-brand-50 has-[:focus-visible]:outline-2 " +
   "has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-brand-500";
 
-export default function QuestionCard({ question, tag, anchorId, value, currency, onChange, onClear }: QuestionCardProps) {
+export default function QuestionCard({
+  question,
+  tag,
+  anchorId,
+  value,
+  origin,
+  currency,
+  onChange,
+  onClear,
+}: QuestionCardProps) {
   const { path, type, options } = question;
   const unknown = isUnknown(value);
 
@@ -32,6 +43,8 @@ export default function QuestionCard({ question, tag, anchorId, value, currency,
       title={question.text}
       why={question.why}
       unknown={unknown}
+      accent={origin === "detected" || origin === "edited"}
+      badge={<OriginBadge origin={origin} />}
       onToggleUnknown={question.allow_unknown ? () => (unknown ? onClear(path) : onChange(path, UNKNOWN_ANSWER)) : undefined}
     >
       <fieldset>
@@ -123,6 +136,8 @@ export default function QuestionCard({ question, tag, anchorId, value, currency,
           />
         )}
       </fieldset>
+
+      <OriginNote origin={origin} onRestore={() => onClear(path)} />
     </CardShell>
   );
 }

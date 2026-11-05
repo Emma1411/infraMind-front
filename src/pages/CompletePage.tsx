@@ -1,5 +1,5 @@
 import { ChevronDown, ListChecks } from "lucide-react";
-import { useCallback, useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Alert from "../components/Alert";
 import { DOMAIN_LIST } from "../data/domains";
@@ -14,21 +14,27 @@ import {
   buildEntries,
   currentCurrency,
   detailQuestions,
+  displayValue,
   domainProgress,
   draftKey,
   entryAnchors,
+  entryKey,
+  entryState,
   essentialQuestions,
   isAnswered,
-  isUnknown,
+  originOf,
   twoDigits,
   type DomainProgress,
 } from "../utils/questions";
 import ActionBar from "../widgets/complete/ActionBar";
 import BudgetCard from "../widgets/complete/BudgetCard";
+import DetectedSummary from "../widgets/complete/DetectedSummary";
 import DomainRail from "../widgets/complete/DomainRail";
 import HourlyRateCard from "../widgets/complete/HourlyRateCard";
 import ProjectNameCard from "../widgets/complete/ProjectNameCard";
 import QuestionCard from "../widgets/complete/QuestionCard";
+
+type Mode = "all" | "todo";
 
 export default function CompletePage() {
   const dispatch = useAppDispatch();
@@ -38,10 +44,19 @@ export default function CompletePage() {
   const { items, draft, lastSavedDraft } = useAppSelector((state) => state.questions);
   const evaluation = useAppSelector((state) => state.results.evaluation);
 
+  const [mode, setMode] = useState<Mode>("all");
+  // Cartes à compléter au moment où le filtre est activé : une carte remplie ne disparaît pas sous les doigts
+  const [snapshot, setSnapshot] = useState<string[]>([]);
+
   const essential = useMemo(() => essentialQuestions(items), [items]);
   const details = useMemo(() => detailQuestions(items), [items]);
-  const entries = useMemo(() => buildEntries(essential), [essential]);
-  const { perEntry, byDomain } = useMemo(() => entryAnchors(entries), [entries]);
+  const allEntries = useMemo(() => buildEntries(essential), [essential]);
+  const numbered = useMemo(() => allEntries.map((entry, index) => ({ entry, number: index + 1 })), [allEntries]);
+  const visible = useMemo(
+    () => (mode === "all" ? numbered : numbered.filter(({ entry }) => snapshot.includes(entryKey(entry)))),
+    [mode, numbered, snapshot],
+  );
+  const { perEntry, byDomain } = useMemo(() => entryAnchors(visible.map(({ entry }) => entry)), [visible]);
 
   const activeId = useActiveSection(useMemo(() => Object.values(byDomain), [byDomain]));
   const activeDomain = (activeId?.replace("domaine-", "") ?? null) as DomainKey | null;
@@ -61,14 +76,23 @@ export default function CompletePage() {
 
   if (!baseSpec) return null;
 
-  const progress = Object.fromEntries(DOMAINS.map((domain) => [domain, domainProgress(domain, items, draft)])) as Record<
-    DomainKey,
-    DomainProgress
-  >;
-  const answered = essential.filter((question) => isAnswered(draft, question.path)).length;
-  const pending = essential.length - answered;
-  const unknownCount = Object.values(draft).filter(isUnknown).length;
-  const currency = currentCurrency(spec, draft);
+  const states = allEntries.map((entry) => entryState(entry, draft));
+  const answered = states.filter((state) => state !== "pending").length;
+  const pending = states.length - answered;
+  const unknownCount = states.filter((state) => state === "unknown").length;
+  const detectedCount = allEntries.filter((entry) => entryState(entry, {}) === "answered").length;
+  const progress = Object.fromEntries(
+    DOMAINS.map((domain) => [domain, domainProgress(domain, allEntries, details, draft)]),
+  ) as Record<DomainKey, DomainProgress>;
+  const currency = currentCurrency(baseSpec, draft);
+  const detailDetected = details.filter((question) => originOf(question, {}) === "detected").length;
+
+  const switchMode = (next: Mode) => {
+    if (next === "todo") {
+      setSnapshot(allEntries.filter((entry) => entryState(entry, draft) === "pending").map(entryKey));
+    }
+    setMode(next);
+  };
 
   const jumpTo = (domain: DomainKey) => {
     const id = byDomain[domain];
@@ -90,6 +114,19 @@ export default function CompletePage() {
     navigate("/resultats");
   };
 
+  const filterButton = (target: Mode, label: string) => (
+    <button
+      type="button"
+      aria-pressed={mode === target}
+      onClick={() => switchMode(target)}
+      className={`rounded-lg px-4 py-2 text-sm font-medium transition ${
+        mode === target ? "bg-white text-brand-800 shadow-sm" : "text-body hover:text-brand-700"
+      }`}
+    >
+      {label}
+    </button>
+  );
+
   return (
     <div>
       <div className="mx-auto max-w-[1200px] px-5 pt-8 pb-10">
@@ -101,16 +138,17 @@ export default function CompletePage() {
             </p>
             <h1 className="mt-2 text-3xl font-bold text-brand-900 sm:text-4xl">Compléter les dimensions architecturales</h1>
             <p className="mt-3 max-w-2xl text-body">
-              Plus tes précisions sont nettes, plus les coûts seront fiables. Chaque incertitude est comblée par une
-              hypothèse prudente, affichée dans les résultats.
+              Vérifie ce que nous avons trouvé dans ton texte et complète le reste. Chaque incertitude est comblée par
+              une hypothèse prudente, affichée dans les résultats.
             </p>
           </div>
           <div className="flex items-center gap-3 rounded-xl2 bg-brand-50 px-5 py-3">
             <ListChecks className="size-5 text-brand-600" aria-hidden />
             <div>
-              <p className="text-xs text-muted">Questions essentielles répondues</p>
+              <p className="text-xs text-muted">Questions essentielles renseignées</p>
               <p className="font-semibold text-brand-800">
-                {answered} sur {essential.length}
+                {answered} sur {allEntries.length}
+                <span className="font-normal text-muted"> · dont {detectedCount} détectées</span>
               </p>
             </div>
           </div>
@@ -147,27 +185,40 @@ export default function CompletePage() {
             anchors={byDomain}
             activeDomain={activeDomain}
             answered={answered}
-            total={essential.length}
+            total={allEntries.length}
             onJump={jumpTo}
           />
 
           <div className="space-y-5">
             <ProjectNameCard />
+            <DetectedSummary spec={baseSpec} detected={detectedCount} total={allEntries.length} />
 
-            {entries.length === 0 && (
-              <Alert tone="ok" title="Rien d'essentiel à compléter">
-                Ton texte contenait toutes les informations essentielles. Tu peux préciser un tarif horaire ci-dessous, ou
-                passer directement aux résultats.
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div role="group" aria-label="Filtrer les questions" className="inline-flex rounded-xl bg-brand-50 p-1">
+                {filterButton("all", "Tout voir")}
+                {filterButton("todo", `À compléter (${pending})`)}
+              </div>
+              <p className="text-sm text-muted">
+                {mode === "all"
+                  ? "Les valeurs détectées sont modifiables."
+                  : "Seules les questions sans réponse au moment du filtre sont affichées."}
+              </p>
+            </div>
+
+            {mode === "todo" && visible.length === 0 && (
+              <Alert tone="ok" title="Tout est renseigné">
+                Aucune question n'est restée sans réponse. Passe à « Tout voir » pour relire ce qui a été détecté.
               </Alert>
             )}
 
-            {entries.map((entry, index) =>
+            {visible.map(({ entry, number }, index) =>
               entry.kind === "budget" ? (
                 <BudgetCard
                   key="budget"
-                  tag={twoDigits(index + 1)}
+                  tag={twoDigits(number)}
                   anchorId={perEntry[index]}
                   budget={entry.budget}
+                  currencyQuestion={entry.currency}
                   draft={draft}
                   onChange={setValue}
                   onClear={clearValue}
@@ -176,9 +227,10 @@ export default function CompletePage() {
                 <QuestionCard
                   key={entry.question.path}
                   question={entry.question}
-                  tag={twoDigits(index + 1)}
+                  tag={twoDigits(number)}
                   anchorId={perEntry[index]}
-                  value={draft[entry.question.path]}
+                  value={displayValue(entry.question, draft)}
+                  origin={originOf(entry.question, draft)}
                   currency={currency}
                   onChange={setValue}
                   onClear={clearValue}
@@ -190,10 +242,11 @@ export default function CompletePage() {
 
             {details.length > 0 && (
               <details className="group rounded-xl2 border border-line bg-white shadow-card">
-                <summary className="flex cursor-pointer list-none items-center gap-3 px-6 py-5 [&::-webkit-details-marker]:hidden">
+                <summary className="flex cursor-pointer list-none flex-wrap items-center gap-x-3 gap-y-1 px-6 py-5 [&::-webkit-details-marker]:hidden">
                   <span className="text-lg font-semibold text-ink">Détails supplémentaires</span>
                   <span className="text-sm text-muted">
-                    · {details.length} question{details.length > 1 ? "s" : ""} avancée{details.length > 1 ? "s" : ""}{" "}
+                    · {details.length} question{details.length > 1 ? "s" : ""} avancée{details.length > 1 ? "s" : ""}
+                    {detailDetected > 0 ? `, dont ${detailDetected} détectée${detailDetected > 1 ? "s" : ""}` : ""}{" "}
                     (facultatif)
                   </span>
                   <ChevronDown className="ml-auto size-5 text-muted transition group-open:rotate-180" aria-hidden />
@@ -204,7 +257,8 @@ export default function CompletePage() {
                       key={question.path}
                       question={question}
                       tag="DÉTAIL"
-                      value={draft[question.path]}
+                      value={displayValue(question, draft)}
+                      origin={originOf(question, draft)}
                       currency={currency}
                       onChange={setValue}
                       onClear={clearValue}

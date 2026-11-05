@@ -1,5 +1,7 @@
-import { ChevronDown, CircleHelp, Info } from "lucide-react";
+import { Check, ChevronDown, CircleHelp, Info, Pencil, ScanSearch } from "lucide-react";
 import { useEffect, useId, useState, type ReactNode } from "react";
+import Badge from "../../components/Badge";
+import type { Origin } from "../../utils/questions";
 
 export function UnknownNotice() {
   return (
@@ -23,6 +25,58 @@ export function WhyDisclosure({ text }: { text: string }) {
   );
 }
 
+/** Pastille qui dit d'où vient la valeur affichée. */
+export function OriginBadge({ origin }: { origin: Origin }) {
+  if (origin === "detected") {
+    return (
+      <Badge tone="info" icon={<ScanSearch className="size-3.5" aria-hidden />}>
+        Détecté dans ton texte
+      </Badge>
+    );
+  }
+  if (origin === "edited") {
+    return (
+      <Badge tone="neutral" icon={<Pencil className="size-3.5" aria-hidden />}>
+        Modifié par toi
+      </Badge>
+    );
+  }
+  if (origin === "answered") {
+    return (
+      <Badge tone="ok" icon={<Check className="size-3.5" aria-hidden />}>
+        Ta réponse
+      </Badge>
+    );
+  }
+  return null;
+}
+
+interface OriginNoteProps {
+  origin: Origin;
+  onRestore: () => void;
+}
+
+export function OriginNote({ origin, onRestore }: OriginNoteProps) {
+  if (origin === "detected") {
+    return (
+      <p className="mt-3 text-xs text-muted">
+        Valeur trouvée dans ton texte. Vérifie qu'elle est juste, et change-la si besoin.
+      </p>
+    );
+  }
+  if (origin === "edited") {
+    return (
+      <p className="mt-3 text-xs text-muted">
+        Tu as modifié la valeur trouvée dans ton texte.{" "}
+        <button type="button" onClick={onRestore} className="font-medium text-brand-700 underline">
+          Rétablir la valeur détectée
+        </button>
+      </p>
+    );
+  }
+  return null;
+}
+
 interface CardShellProps {
   anchorId?: string;
   tag: string;
@@ -32,20 +86,34 @@ interface CardShellProps {
   onToggleUnknown?: () => void;
   unknown?: boolean;
   badge?: ReactNode;
+  /** Liseré bleu : la valeur vient du texte de l'utilisateur. */
+  accent?: boolean;
   children: ReactNode;
 }
 
-export function CardShell({ anchorId, tag, title, why, onToggleUnknown, unknown = false, badge, children }: CardShellProps) {
+export function CardShell({
+  anchorId,
+  tag,
+  title,
+  why,
+  onToggleUnknown,
+  unknown = false,
+  badge,
+  accent = false,
+  children,
+}: CardShellProps) {
   const titleId = useId();
   return (
     <section
       id={anchorId}
       aria-labelledby={titleId}
-      className="scroll-mt-28 rounded-xl2 border border-line bg-white p-5 shadow-card sm:p-6"
+      className={`scroll-mt-28 rounded-xl2 border bg-white p-5 shadow-card sm:p-6 ${
+        accent ? "border-brand-200 border-l-4 border-l-brand-500" : "border-line"
+      }`}
     >
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="font-mono text-xs font-semibold tracking-wide text-brand-700">{tag}</p>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {badge}
           {onToggleUnknown && (
             <button

@@ -1,9 +1,9 @@
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
 import type { GuideResponse } from "../interfaces/guide";
 import type { LoadStatus } from "../interfaces/state";
+import { analyzeProject, saveAnswers } from "../thunks/analysisThunks";
 import { loadAvailableGuides, loadGuide } from "../thunks/guideThunks";
 import { rejectedMessage } from "../utils/errors";
-import { analyzeProject, saveAnswers } from "../thunks/analysisThunks";
 
 interface GuideState {
   available: string[];
@@ -12,8 +12,10 @@ interface GuideState {
   byArch: Record<string, GuideResponse>;
   status: Record<string, LoadStatus>;
   errors: Record<string, string | null>;
-  /** Étapes cochées « faites », par architecture. Conservées si les guides sont rechargés. */
+  /** Étapes validées, par architecture. Conservées si les guides sont rechargés. */
   done: Record<string, string[]>;
+  /** Prérequis cochés (par position), par architecture. */
+  prereqDone: Record<string, number[]>;
 }
 
 const initialState: GuideState = {
@@ -23,6 +25,7 @@ const initialState: GuideState = {
   status: {},
   errors: {},
   done: {},
+  prereqDone: {},
 };
 
 const guideSlice = createSlice({
@@ -34,21 +37,32 @@ const guideSlice = createSlice({
       const current = state.done[archId] ?? [];
       state.done[archId] = current.includes(stepId) ? current.filter((id) => id !== stepId) : [...current, stepId];
     },
+    markStepDone(state, action: PayloadAction<{ archId: string; stepId: string }>) {
+      const { archId, stepId } = action.payload;
+      const current = state.done[archId] ?? [];
+      if (!current.includes(stepId)) state.done[archId] = [...current, stepId];
+    },
+    togglePrerequisite(state, action: PayloadAction<{ archId: string; index: number }>) {
+      const { archId, index } = action.payload;
+      const current = state.prereqDone[archId] ?? [];
+      state.prereqDone[archId] = current.includes(index) ? current.filter((i) => i !== index) : [...current, index];
+    },
   },
   extraReducers: (builder) => {
     builder
-      // Les guides contiennent les valeurs du projet : de nouvelles réponses les rendent périmés
-      .addCase(saveAnswers.fulfilled, (state) => {
-        state.byArch = {};
-        state.status = {};
-        state.errors = {};
-      })
-
+      // Une nouvelle analyse repart d'un projet vierge
       .addCase(analyzeProject.fulfilled, (state) => {
         state.byArch = {};
         state.status = {};
         state.errors = {};
         state.done = {};
+        state.prereqDone = {};
+      })
+      // Les guides contiennent les valeurs du projet : de nouvelles réponses les rendent périmés
+      .addCase(saveAnswers.fulfilled, (state) => {
+        state.byArch = {};
+        state.status = {};
+        state.errors = {};
       })
 
       .addCase(loadAvailableGuides.pending, (state) => {
@@ -84,5 +98,5 @@ const guideSlice = createSlice({
   },
 });
 
-export const { toggleStepDone } = guideSlice.actions;
+export const { toggleStepDone, markStepDone, togglePrerequisite } = guideSlice.actions;
 export default guideSlice.reducer;

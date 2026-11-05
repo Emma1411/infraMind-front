@@ -1,11 +1,11 @@
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
-import type { AnswerValue, Answers, Question } from "../interfaces/analysis";
+import type { AnswerValue, Answers, QuestionState } from "../interfaces/analysis";
 import { analyzeProject, saveAnswers } from "../thunks/analysisThunks";
 import { draftKey } from "../utils/questions";
 
 interface QuestionsState {
-  items: Question[];
-  /** Réponses en cours de saisie. La valeur « unknown » veut dire « je ne sais pas ». */
+  items: QuestionState[];
+  /** Ce que l'utilisateur a saisi ou modifié. « unknown » veut dire « je ne sais pas ». */
   draft: Answers;
   /** Empreinte des dernières réponses envoyées au serveur. */
   lastSavedDraft: string | null;

@@ -1,21 +1,21 @@
 import { createAsyncThunk } from "@reduxjs/toolkit";
-import type { Answers, AnswersResponse, ExtractResponse, QuestionsResponse } from "../interfaces/analysis";
+import type { Answers, AnswersResponse, ExtractResponse, QuestionStatesResponse } from "../interfaces/analysis";
 import type { ProjectSpec } from "../interfaces/spec";
-import { extractSpec, fetchQuestions, submitAnswers } from "../services/analysisService";
+import { extractSpec, fetchQuestionStates, submitAnswers } from "../services/analysisService";
 import { isAbortError, toMessage } from "../utils/errors";
 
 export interface AnalyzeResult {
   extract: ExtractResponse;
-  questions: QuestionsResponse;
+  questions: QuestionStatesResponse;
 }
 
-/** Étape 1 : l'IA structure le texte collé, puis le moteur prépare les questions à poser. */
+/** Étape 1 : l'IA structure le texte collé, puis le moteur prépare les questions avec leurs valeurs détectées. */
 export const analyzeProject = createAsyncThunk<AnalyzeResult, string, { rejectValue: string }>(
   "project/analyze",
   async (text, { signal, rejectWithValue }) => {
     try {
       const extract = await extractSpec(text, signal);
-      const questions = await fetchQuestions(extract.spec, signal);
+      const questions = await fetchQuestionStates(extract.spec, signal);
       return { extract, questions };
     } catch (error) {
       if (isAbortError(error)) throw error;
@@ -27,6 +27,7 @@ export const analyzeProject = createAsyncThunk<AnalyzeResult, string, { rejectVa
 export interface SaveAnswersArgs {
   /** Le résultat de l'extraction, jamais le spec déjà modifié par des réponses précédentes. */
   baseSpec: ProjectSpec;
+  /** Seulement ce que l'utilisateur a saisi ou modifié : le reste est déjà dans baseSpec. */
   answers: Answers;
 }
 
