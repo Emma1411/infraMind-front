@@ -21,7 +21,6 @@ import {
   entryKey,
   entryState,
   essentialQuestions,
-  isAnswered,
   originOf,
   twoDigits,
   type DomainProgress,
@@ -40,7 +39,7 @@ export default function CompletePage() {
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
 
-  const { baseSpec, spec, secretsMasked, answersStatus, answersError } = useAppSelector((state) => state.project);
+  const { baseSpec, secretsMasked, answersStatus, answersError } = useAppSelector((state) => state.project);
   const { items, draft, lastSavedDraft } = useAppSelector((state) => state.questions);
   const evaluation = useAppSelector((state) => state.results.evaluation);
 
